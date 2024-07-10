@@ -688,3 +688,69 @@ procdump(void)
     printf("\n");
   }
 }
+
+struct proc* find_proc(int src_pid) {
+    struct proc *src_proc;
+    src_proc = proc;
+    for (; src_proc < &proc[NPROC]; src_proc++) {
+        if (src_proc->pid == src_pid) {
+            return src_proc;
+        }
+    }
+    return src_proc;
+}
+
+uint64 map_shared_pages_by_src_pid(int src_pid, struct proc* dst_proc, uint64 src_va, uint64 size) {
+    struct proc *src_proc;
+
+    for (src_proc = proc; src_proc < &proc[NPROC]; src_proc++) {
+        if (src_proc->pid == src_pid) {
+            return map_shared_pages(src_proc, dst_proc, src_va, size);
+        }
+    }
+    return -1;
+}
+
+uint64 map_shared_pages(struct proc* src_proc, struct proc* dst_proc, uint64 src_va, uint64 size) {
+    pte_t *pte;
+    uint64 a, last, offset, dst_starting_va, dst_curr_va;
+
+    dst_starting_va = PGROUNDUP(dst_proc->sz);
+    dst_curr_va = dst_starting_va;
+    a = PGROUNDDOWN(src_va);
+    last = PGROUNDDOWN(src_va + size - 1);
+    offset = src_va - a;
+
+    for (;;) {
+        if((pte = walk(src_proc->pagetable, a, 0)) == 0)
+            return -1;
+        if(mappages(dst_proc->pagetable, dst_curr_va, PGSIZE, PTE2PA(*pte), PTE_FLAGS(*pte) | PTE_S) != 0)
+            return -1;
+        if(a == last)
+            break;
+        a += PGSIZE;
+        dst_curr_va += PGSIZE;
+    }
+    dst_proc->sz = dst_curr_va + PGSIZE;
+    return dst_starting_va + offset;
+}
+
+uint64 unmap_shared_pages(struct proc* p, uint64 addr, uint64 size) {
+    uint64 a, top;
+    pte_t *pte;
+    top = PGROUNDUP(addr + size);
+    for(a = PGROUNDDOWN(addr); a < top; a += PGSIZE){
+        if((pte = walk(p->pagetable, a, 0)) == 0)
+            panic("uvmunmap_shared: walk");
+        if((*pte & PTE_V) == 0)
+            return -1;
+        if(PTE_FLAGS(*pte) == PTE_V)
+            return -1;
+        if((*pte & PTE_S) == 0)
+            // not shared
+            return -1;
+        *pte = 0;
+        p->sz -= PGSIZE;
+    }
+    return 0;
+}
