@@ -46,8 +46,11 @@ acquire(struct spinlock *lk)
 void
 release(struct spinlock *lk)
 {
-  if(!holding(lk))
+  struct proc *proc = myproc();
+  if(!holding(lk)){
+    printf("[DEBUG]: process id %d", proc->pid);
     panic("release");
+  }
 
   lk->cpu = 0;
 
